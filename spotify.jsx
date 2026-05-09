@@ -4,6 +4,7 @@
 async function spotifyFetch(path, opts = {}) {
   const token = await Auth.getValidToken();
   const url = path.startsWith("http") ? path : `${CONFIG.API_BASE}${path}`;
+  console.log("[spotify] →", url);
   const res = await fetch(url, {
     ...opts,
     headers: {
