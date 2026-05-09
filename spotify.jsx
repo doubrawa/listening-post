@@ -15,7 +15,7 @@ async function spotifyFetch(path, opts = {}) {
 
   if (res.status === 401) {
     Auth.logout();
-    throw new Error("Unauthorized — please log in again");
+    return new Promise(() => {});
   }
   if (res.status === 429) {
     const retry = Number(res.headers.get("Retry-After") || 1);
@@ -24,59 +24,47 @@ async function spotifyFetch(path, opts = {}) {
   }
   if (!res.ok) {
     const body = await res.text();
+    // Insufficient-scope 403s mean the token predates a SCOPES change;
+    // log out so the next login picks up the new scope automatically.
+    if (res.status === 403 && /scope|insufficient/i.test(body)) {
+      console.warn("[spotify] scope changed — re-authorising");
+      Auth.logout();
+      return new Promise(() => {});
+    }
     console.error("[spotify] ←", res.status, res.statusText, body);
     throw new Error(`Spotify API ${res.status}: ${body}`);
   }
   return res.json();
 }
 
-// /browse/new-releases is locked and `tag:new` is rejected for new apps,
-// so we do many small year-filtered searches in parallel — one with no
-// genre, plus one per common genre. Each query returns ~5 popular hits,
-// merging gives 30-60 unique albums, and the genre buckets are filled
-// straight from which query the album came from (no artist fetch needed).
-const RELEASE_QUERIES = [
-  [null,           null],          // baseline year-only
-  ["Soundtracks",  "soundtrack"],
-  ["Classical",    "classical"],
-  ["Jazz",         "jazz"],
-  ["Electronic",   "electronic"],
-  ["Ambient",      "ambient"],
-  ["Hip-Hop",      "hip-hop"],
-  ["R&B / Soul",   "soul"],
-  ["Rock",         "rock"],
-  ["Indie",        "indie"],
-  ["Folk",         "folk"],
-  ["Country",      "country"],
-  ["Pop",          "pop"],
-];
-
-async function fetchNewReleases() {
-  const year = new Date().getFullYear();
-  const requests = RELEASE_QUERIES.map(([bucket, genre]) => {
-    let q = `year:${year}`;
-    if (genre) q += ` genre:${genre}`;
-    const params = new URLSearchParams({ q, type: "album" });
-    return spotifyFetch(`/search?${params}`)
-      .then(d => ({ bucket, items: d.albums?.items || [] }))
-      .catch(() => ({ bucket, items: [] }));
-  });
-  const results = await Promise.all(requests);
-
-  const merged = new Map();
-  for (const { bucket, items } of results) {
-    for (const a of items) {
-      const existing = merged.get(a.id);
-      if (existing) {
-        if (bucket && !existing._buckets.includes(bucket)) {
-          existing._buckets.push(bucket);
-        }
-      } else {
-        merged.set(a.id, { ...a, _buckets: bucket ? [bucket] : [] });
-      }
-    }
+// /browse/new-releases and /search field operators are mostly locked for
+// non-quota apps, so we ground the "new releases" feed in the user's own
+// followed-artists list instead. /me/following returns full artist
+// objects (genres included), and /artists/{id}/albums is open enough to
+// fetch each artist's recent catalogue without needing the bulk
+// /artists endpoint.
+async function fetchFollowedArtists() {
+  const all = [];
+  let after = null;
+  while (true) {
+    const params = new URLSearchParams({ type: "artist", limit: "50" });
+    if (after) params.set("after", after);
+    const data = await spotifyFetch(`/me/following?${params}`);
+    const items = data.artists?.items || [];
+    all.push(...items);
+    after = data.artists?.cursors?.after;
+    if (!after || !items.length) break;
   }
-  return { items: [...merged.values()] };
+  return all;
+}
+
+async function fetchArtistAlbums(artistId, { limit = 20 } = {}) {
+  const params = new URLSearchParams({
+    include_groups: "album,single,compilation",
+    limit: String(limit),
+  });
+  const data = await spotifyFetch(`/artists/${artistId}/albums?${params}`);
+  return data.items || [];
 }
 
 // Bulk /artists?ids=… is denied for many new apps (403). Try it first
@@ -120,4 +108,7 @@ async function searchAlbums({ query } = {}) {
   return data.albums?.items || [];
 }
 
-window.Spotify = { fetchNewReleases, fetchArtists, fetchAlbum, searchAlbums };
+window.Spotify = {
+  fetchFollowedArtists, fetchArtistAlbums,
+  fetchArtists, fetchAlbum, searchAlbums,
+};

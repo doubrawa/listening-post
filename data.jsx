@@ -11,11 +11,11 @@ function normalizeDate(date, precision) {
 
 function fromSpotifyAlbum(album, artistsById = {}) {
   const primary = album.artists?.[0];
-  const artistGenres = primary && artistsById[primary.id]
-    ? artistsById[primary.id].genres || []
-    : [];
-  // Buckets from the genre-search-query are the most reliable; fall back
-  // to artist genre tags when those aren't available.
+  // Genre/style data may travel on the album itself (when the loader
+  // already had the artist) or come from a separately-fetched artist map.
+  const artistGenres = album._artistGenres
+    || (primary && artistsById[primary.id]?.genres)
+    || [];
   const buckets = album._buckets && album._buckets.length
     ? album._buckets
     : window.Genres.bucketsFor(artistGenres);

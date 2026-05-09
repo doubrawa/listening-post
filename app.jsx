@@ -67,30 +67,53 @@ function App() {
   async function loadReleases() {
     setLoadState("loading");
     try {
-      const albums = await Spotify.fetchNewReleases();
-      const items  = albums.items || [];
+      const followed = await Spotify.fetchFollowedArtists();
+      if (!followed.length) {
+        setError("You don't follow any artists on Spotify yet — follow a few in the Spotify app, then reload here.");
+        setLoadState("error");
+        return;
+      }
 
-      // Phase 1 — show albums quickly without genre data
-      let mapped = items.map(a => Data.fromSpotifyAlbum(a, {}));
+      console.log(`[listening-post] following ${followed.length} artists, fetching albums…`);
+
+      // Limit how far back we look — anything older than two years isn't
+      // meaningfully a "new release" and just bloats the grid.
+      const cutoff = new Date();
+      cutoff.setFullYear(cutoff.getFullYear() - 2);
+
+      // Fetch each artist's recent albums in parallel. Some calls may fail
+      // (rate limits, gone artists, etc.) — allSettled keeps the rest.
+      const results = await Promise.allSettled(
+        followed.map(artist =>
+          Spotify.fetchArtistAlbums(artist.id, { limit: 20 })
+            .then(albums => ({ artist, albums }))
+        )
+      );
+
+      const merged = new Map();
+      for (const r of results) {
+        if (r.status !== "fulfilled") continue;
+        const { artist, albums } = r.value;
+        const buckets = window.Genres.bucketsFor(artist.genres || []);
+        for (const a of albums) {
+          if (a.release_date && new Date(a.release_date) < cutoff) continue;
+          if (merged.has(a.id)) continue;
+          merged.set(a.id, {
+            ...a,
+            _buckets: buckets,
+            _artistGenres: artist.genres || [],
+          });
+        }
+      }
+
+      const mapped = [...merged.values()].map(a => Data.fromSpotifyAlbum(a, {}));
       setReleases(mapped);
       setLoadState("loaded");
 
-      // Phase 2 — fetch artists to derive genre buckets. Soft-fail:
-      // if the artist endpoints are also restricted for this app, keep
-      // the releases visible without genre tags rather than erroring.
-      try {
-        const artistIds = items.flatMap(a => (a.artists || []).map(ar => ar.id));
-        const artists   = await Spotify.fetchArtists(artistIds);
-        mapped = items.map(a => Data.fromSpotifyAlbum(a, artists));
-        setReleases(mapped);
-
-        const allGenres = Object.values(artists).flatMap(a => a.genres || []);
-        const unmatched = window.Genres.unmatchedGenres(allGenres);
-        if (unmatched.length) {
-          console.log("[listening-post] unmatched Spotify genres:", unmatched);
-        }
-      } catch (e) {
-        console.warn("[listening-post] artist fetch failed — genre buckets disabled:", e.message);
+      const allGenres = followed.flatMap(a => a.genres || []);
+      const unmatched = window.Genres.unmatchedGenres(allGenres);
+      if (unmatched.length) {
+        console.log("[listening-post] unmatched Spotify genres:", unmatched);
       }
     } catch (e) {
       console.error(e);
