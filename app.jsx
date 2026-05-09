@@ -4,6 +4,7 @@ const { useState, useMemo, useEffect } = React;
 const DEFAULT_FILTERS = {
   sort: "newest",
   window: "all",
+  since: "",   // ISO YYYY-MM-DD; takes precedence over window when set
   styles: [],
   artists: [],
   artistQuery: "",
@@ -67,24 +68,43 @@ function App() {
   async function loadReleases() {
     setLoadState("loading");
     try {
-      const followed = await Spotify.fetchFollowedArtists();
-      if (!followed.length) {
-        setError("You don't follow any artists on Spotify yet — follow a few in the Spotify app, then reload here.");
+      // Combine the user's followed artists (if any) with the seed list.
+      // Either source alone is fine — followed wins on dedup since it
+      // reflects the user's actual taste.
+      const [followed, seeds] = await Promise.all([
+        Spotify.fetchFollowedArtists().catch(e => {
+          console.warn("[listening-post] followed-artist fetch failed:", e.message);
+          return [];
+        }),
+        Seeds.resolveSeedArtists(),
+      ]);
+
+      const seen = new Set();
+      const allArtists = [];
+      for (const a of [...followed, ...seeds]) {
+        if (a && a.id && !seen.has(a.id)) {
+          seen.add(a.id);
+          allArtists.push(a);
+        }
+      }
+
+      if (!allArtists.length) {
+        setError("Couldn't resolve any artists — check the console for details.");
         setLoadState("error");
         return;
       }
 
-      console.log(`[listening-post] following ${followed.length} artists, fetching albums…`);
+      console.log(`[listening-post] querying ${allArtists.length} artists ` +
+                  `(${followed.length} followed, ${seeds.length} seeded)`);
 
-      // Limit how far back we look — anything older than two years isn't
-      // meaningfully a "new release" and just bloats the grid.
+      // Anything older than two years isn't meaningfully a "new release"
+      // and would just bloat the grid. The user can narrow further with
+      // the date filter once the data is in.
       const cutoff = new Date();
       cutoff.setFullYear(cutoff.getFullYear() - 2);
 
-      // Fetch each artist's recent albums in parallel. Some calls may fail
-      // (rate limits, gone artists, etc.) — allSettled keeps the rest.
       const results = await Promise.allSettled(
-        followed.map(artist =>
+        allArtists.map(artist =>
           Spotify.fetchArtistAlbums(artist.id, { limit: 20 })
             .then(albums => ({ artist, albums }))
         )
@@ -110,7 +130,7 @@ function App() {
       setReleases(mapped);
       setLoadState("loaded");
 
-      const allGenres = followed.flatMap(a => a.genres || []);
+      const allGenres = allArtists.flatMap(a => a.genres || []);
       const unmatched = window.Genres.unmatchedGenres(allGenres);
       if (unmatched.length) {
         console.log("[listening-post] unmatched Spotify genres:", unmatched);
@@ -187,6 +207,14 @@ function App() {
     // filters (genre, date, style, artist chip) still apply.
     let xs = activeReleases.filter(r => inGenre(r, genre));
 
+    // Either an explicit since-date or one of the relative chips. If both
+    // are set the more restrictive one effectively wins (we apply both).
+    if (filters.since) {
+      const sinceDate = new Date(filters.since);
+      if (!isNaN(sinceDate.getTime())) {
+        xs = xs.filter(r => r.date && new Date(r.date) >= sinceDate);
+      }
+    }
     if (filters.window !== "all") {
       const cutoff = new Date();
       if (filters.window === "7d")   cutoff.setDate(cutoff.getDate() - 7);

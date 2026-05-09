@@ -108,7 +108,13 @@ async function searchAlbums({ query } = {}) {
   return data.albums?.items || [];
 }
 
+async function searchArtists({ query } = {}) {
+  const params = new URLSearchParams({ q: (query || "").trim(), type: "artist" });
+  const data = await spotifyFetch(`/search?${params}`);
+  return data.artists?.items || [];
+}
+
 window.Spotify = {
   fetchFollowedArtists, fetchArtistAlbums,
-  fetchArtists, fetchAlbum, searchAlbums,
+  fetchArtists, fetchAlbum, searchAlbums, searchArtists,
 };

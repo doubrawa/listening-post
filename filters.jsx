@@ -109,6 +109,36 @@ function FilterPanel({ filters, setFilter, allArtists, allStyles, resultCount, o
             </ChipToggle>
           ))}
         </div>
+        <div style={{ marginTop: 12 }}>
+          <div className="mono" style={{ fontSize: 10, color: "var(--fg-3)",
+              letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 6 }}>
+            or since a specific date
+          </div>
+          <input type="date"
+            value={filters.since || ""}
+            onChange={e => setFilter("since", e.target.value)}
+            style={{
+              width: "100%", padding: "7px 10px",
+              background: "var(--bg-2)", color: "var(--fg)",
+              border: `1px solid ${filters.since ? "var(--accent)" : "var(--line)"}`,
+              borderRadius: 4,
+              fontFamily: "IBM Plex Mono, monospace",
+              fontSize: 12, outline: "none",
+              colorScheme: "dark",
+            }}
+            onFocus={e => e.target.style.borderColor = "var(--accent)"}
+            onBlur={e => e.target.style.borderColor = filters.since ? "var(--accent)" : "var(--line)"}
+          />
+          {filters.since && (
+            <button onClick={() => setFilter("since", "")} className="mono"
+              style={{ marginTop: 6, fontSize: 10, color: "var(--fg-3)",
+                       letterSpacing: "0.12em", textTransform: "uppercase" }}
+              onMouseEnter={e => e.currentTarget.style.color = "var(--fg)"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--fg-3)"}>
+              clear
+            </button>
+          )}
+        </div>
       </Section>
 
       <Section title="Style" count={filters.styles.length || null}>
