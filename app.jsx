@@ -43,7 +43,7 @@ function App() {
   async function loadReleases() {
     setLoadState("loading");
     try {
-      const albums = await Spotify.fetchNewReleases({ limit: 50 });
+      const albums = await Spotify.fetchNewReleases();
       const items  = albums.items || [];
 
       // Phase 1 — show albums quickly without genre data
