@@ -27,9 +27,13 @@ async function spotifyFetch(path, opts = {}) {
   return res.json();
 }
 
-async function fetchNewReleases({ market = CONFIG.MARKET, limit = 50, offset = 0 } = {}) {
-  const params = new URLSearchParams({ limit, offset, country: market });
-  const data = await spotifyFetch(`/browse/new-releases?${params}`);
+// Spotify locked /browse/new-releases for many newer apps (returns 403).
+// Search with `tag:new` is the documented replacement and stays open.
+async function fetchNewReleases({ limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams({
+    q: "tag:new", type: "album", limit, offset,
+  });
+  const data = await spotifyFetch(`/search?${params}`);
   return data.albums; // { items, total, next, ... }
 }
 
