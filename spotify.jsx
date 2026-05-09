@@ -30,20 +30,53 @@ async function spotifyFetch(path, opts = {}) {
   return res.json();
 }
 
-// Spotify locked /browse/new-releases for many newer apps (403) and the
-// `tag:new` search operator now also requires extended quota — Spotify
-// reports it as a misleading "Invalid limit" 400. A year:<current> query
-// stays open and we sort the result by release date client-side to bubble
-// the freshest releases to the top.
-async function fetchNewReleases({ offset = 0 } = {}) {
+// /browse/new-releases is locked and `tag:new` is rejected for new apps,
+// so we do many small year-filtered searches in parallel — one with no
+// genre, plus one per common genre. Each query returns ~5 popular hits,
+// merging gives 30-60 unique albums, and the genre buckets are filled
+// straight from which query the album came from (no artist fetch needed).
+const RELEASE_QUERIES = [
+  [null,           null],          // baseline year-only
+  ["Soundtracks",  "soundtrack"],
+  ["Classical",    "classical"],
+  ["Jazz",         "jazz"],
+  ["Electronic",   "electronic"],
+  ["Ambient",      "ambient"],
+  ["Hip-Hop",      "hip-hop"],
+  ["R&B / Soul",   "soul"],
+  ["Rock",         "rock"],
+  ["Indie",        "indie"],
+  ["Folk",         "folk"],
+  ["Country",      "country"],
+  ["Pop",          "pop"],
+];
+
+async function fetchNewReleases() {
   const year = new Date().getFullYear();
-  const params = new URLSearchParams({
-    q: `year:${year}`,
-    type: "album",
+  const requests = RELEASE_QUERIES.map(([bucket, genre]) => {
+    let q = `year:${year}`;
+    if (genre) q += ` genre:${genre}`;
+    const params = new URLSearchParams({ q, type: "album" });
+    return spotifyFetch(`/search?${params}`)
+      .then(d => ({ bucket, items: d.albums?.items || [] }))
+      .catch(() => ({ bucket, items: [] }));
   });
-  if (offset > 0) params.set("offset", String(offset));
-  const data = await spotifyFetch(`/search?${params}`);
-  return data.albums; // { items, total, next, ... }
+  const results = await Promise.all(requests);
+
+  const merged = new Map();
+  for (const { bucket, items } of results) {
+    for (const a of items) {
+      const existing = merged.get(a.id);
+      if (existing) {
+        if (bucket && !existing._buckets.includes(bucket)) {
+          existing._buckets.push(bucket);
+        }
+      } else {
+        merged.set(a.id, { ...a, _buckets: bucket ? [bucket] : [] });
+      }
+    }
+  }
+  return { items: [...merged.values()] };
 }
 
 // Bulk /artists?ids=… is denied for many new apps (403). Try it first
@@ -81,14 +114,10 @@ async function fetchAlbum(id) {
   return spotifyFetch(`/albums/${id}`);
 }
 
-async function searchAlbums({ query, year, genre, limit = 50 } = {}) {
-  let q = (query || "").trim();
-  if (year)  q += ` year:${year}`;
-  if (genre) q += ` genre:"${genre}"`;
-  if (!q.includes("tag:new")) q += " tag:new";
-  const params = new URLSearchParams({ q: q.trim(), type: "album", limit });
+async function searchAlbums({ query } = {}) {
+  const params = new URLSearchParams({ q: (query || "").trim(), type: "album" });
   const data = await spotifyFetch(`/search?${params}`);
-  return data.albums;
+  return data.albums?.items || [];
 }
 
 window.Spotify = { fetchNewReleases, fetchArtists, fetchAlbum, searchAlbums };

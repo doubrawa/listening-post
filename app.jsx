@@ -17,6 +17,11 @@ function App() {
   const [error, setError]         = useState(null);
   const [releases, setReleases]   = useState([]);
 
+  // Spotify-side search results — populated when the user types in the
+  // header search box; null means "show new releases instead".
+  const [searchResults, setSearchResults] = useState(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+
   // UI state
   const [genre, setGenre]         = useState("All");
   const [filters, setFilters]     = useState(DEFAULT_FILTERS);
@@ -39,6 +44,25 @@ function App() {
       }
     })();
   }, []);
+
+  // Debounced Spotify search whenever the search box has content.
+  useEffect(() => {
+    const q = filters.search.trim();
+    if (!q) { setSearchResults(null); setSearchLoading(false); return; }
+    setSearchLoading(true);
+    const t = setTimeout(async () => {
+      try {
+        const items  = await Spotify.searchAlbums({ query: q });
+        const mapped = items.map(a => Data.fromSpotifyAlbum(a, {}));
+        setSearchResults(mapped);
+      } catch (e) {
+        console.warn("[listening-post] search failed:", e.message);
+        setSearchResults([]);
+      }
+      setSearchLoading(false);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [filters.search]);
 
   async function loadReleases() {
     setLoadState("loading");
@@ -99,48 +123,46 @@ function App() {
     return r.buckets?.includes(g);
   }
 
+  // Whatever's currently the source of truth for the grid: search results
+  // when the search box has content, otherwise the loaded new releases.
+  const activeReleases = searchResults ?? releases;
+
   const allArtists = useMemo(() => {
-    const subset = releases.filter(r => inGenre(r, genre));
+    const subset = activeReleases.filter(r => inGenre(r, genre));
     return [...new Set(subset.map(r => r.artist))].sort();
-  }, [releases, genre]);
+  }, [activeReleases, genre]);
 
   const allStyles = useMemo(() => {
     const counts = new Map();
-    for (const r of releases) {
+    for (const r of activeReleases) {
       if (!inGenre(r, genre)) continue;
       for (const s of r.styles || []) {
         counts.set(s, (counts.get(s) || 0) + 1);
       }
     }
     return [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([s]) => s);
-  }, [releases, genre]);
+  }, [activeReleases, genre]);
 
   const genreCounts = useMemo(() => {
-    const counts = { All: releases.length, Other: 0 };
-    for (const r of releases) {
+    const counts = { All: activeReleases.length, Other: 0 };
+    for (const r of activeReleases) {
       if (!r.buckets?.length) counts.Other += 1;
       for (const b of r.buckets || []) {
         counts[b] = (counts[b] || 0) + 1;
       }
     }
     return counts;
-  }, [releases]);
+  }, [activeReleases]);
 
   const visibleGenres = useMemo(() => {
     return window.GENRES.filter(g => g === "All" || (genreCounts[g] || 0) > 0);
   }, [genreCounts]);
 
   const filtered = useMemo(() => {
-    let xs = releases.filter(r => inGenre(r, genre));
-
-    if (filters.search.trim()) {
-      const q = filters.search.toLowerCase();
-      xs = xs.filter(r =>
-        r.title.toLowerCase().includes(q) ||
-        r.artist.toLowerCase().includes(q) ||
-        (r.label || "").toLowerCase().includes(q)
-      );
-    }
+    // When a Spotify search is active we don't re-filter the title/artist
+    // text on top of it — Spotify already did that match. The other
+    // filters (genre, date, style, artist chip) still apply.
+    let xs = activeReleases.filter(r => inGenre(r, genre));
 
     if (filters.window !== "all") {
       const cutoff = new Date();
@@ -160,7 +182,7 @@ function App() {
     if (filters.sort === "artist") xs.sort((a, b) => a.artist.localeCompare(b.artist));
     if (filters.sort === "title")  xs.sort((a, b) => a.title.localeCompare(b.title));
     return xs;
-  }, [releases, genre, filters]);
+  }, [activeReleases, genre, filters]);
 
   const heroRelease  = filtered[0];
   const gridReleases = filtered.slice(1);
@@ -215,7 +237,11 @@ function App() {
                 </div>
                 <div className="mono" style={{ fontSize: 9, color: "var(--fg-3)",
                     letterSpacing: "0.16em", marginTop: 2 }}>
-                  NEW RELEASES · {releases.length} ALBUMS
+                  {searchResults
+                    ? (searchLoading
+                        ? "SEARCHING…"
+                        : `SEARCH · ${searchResults.length} ALBUMS`)
+                    : `NEW RELEASES · ${releases.length} ALBUMS`}
                 </div>
               </div>
             </div>
@@ -329,13 +355,15 @@ function App() {
             <div>
               <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)",
                   letterSpacing: "0.16em", textTransform: "uppercase" }}>
-                Currently browsing
+                {searchResults ? `Search results for "${filters.search}"` : "Currently browsing"}
               </div>
               <h2 className="serif" style={{
                 fontSize: "2.2rem", margin: "4px 0 0",
                 fontStyle: "italic", fontWeight: 500, letterSpacing: "-0.02em",
               }}>
-                {genre === "All" ? "Everything new" : genre}
+                {searchResults
+                  ? (genre === "All" ? "Search" : genre)
+                  : (genre === "All" ? "Everything new" : genre)}
                 <span style={{ color: "var(--fg-3)", fontStyle: "normal",
                     fontFamily: "IBM Plex Mono, monospace", fontSize: "0.65em",
                     marginLeft: 12, letterSpacing: "0.05em" }}>

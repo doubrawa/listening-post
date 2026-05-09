@@ -14,7 +14,11 @@ function fromSpotifyAlbum(album, artistsById = {}) {
   const artistGenres = primary && artistsById[primary.id]
     ? artistsById[primary.id].genres || []
     : [];
-  const buckets = window.Genres.bucketsFor(artistGenres);
+  // Buckets from the genre-search-query are the most reliable; fall back
+  // to artist genre tags when those aren't available.
+  const buckets = album._buckets && album._buckets.length
+    ? album._buckets
+    : window.Genres.bucketsFor(artistGenres);
 
   return {
     id:        album.id,
