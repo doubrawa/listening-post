@@ -46,14 +46,33 @@ async function fetchNewReleases({ offset = 0 } = {}) {
   return data.albums; // { items, total, next, ... }
 }
 
+// Bulk /artists?ids=… is denied for many new apps (403). Try it first
+// for speed; if it fails, fall back to singular /artists/{id} requests
+// in parallel. We use allSettled so a few rate-limited misses don't
+// kill the whole batch.
 async function fetchArtists(ids) {
   const unique = [...new Set(ids.filter(Boolean))];
   const out = {};
-  for (let i = 0; i < unique.length; i += 50) {
-    const chunk = unique.slice(i, i + 50);
-    const params = new URLSearchParams({ ids: chunk.join(",") });
-    const data = await spotifyFetch(`/artists?${params}`);
-    for (const a of data.artists) out[a.id] = a;
+
+  try {
+    for (let i = 0; i < unique.length; i += 50) {
+      const chunk = unique.slice(i, i + 50);
+      const params = new URLSearchParams({ ids: chunk.join(",") });
+      const data = await spotifyFetch(`/artists?${params}`);
+      for (const a of data.artists) out[a.id] = a;
+    }
+    return out;
+  } catch (e) {
+    console.warn("[spotify] bulk /artists denied, retrying per-artist");
+  }
+
+  const results = await Promise.allSettled(
+    unique.map(id => spotifyFetch(`/artists/${id}`))
+  );
+  for (let i = 0; i < unique.length; i++) {
+    if (results[i].status === "fulfilled") {
+      out[unique[i]] = results[i].value;
+    }
   }
   return out;
 }

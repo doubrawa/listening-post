@@ -51,16 +51,22 @@ function App() {
       setReleases(mapped);
       setLoadState("loaded");
 
-      // Phase 2 — fetch artists in batch to derive genre buckets
-      const artistIds = items.flatMap(a => (a.artists || []).map(ar => ar.id));
-      const artists   = await Spotify.fetchArtists(artistIds);
-      mapped = items.map(a => Data.fromSpotifyAlbum(a, artists));
-      setReleases(mapped);
+      // Phase 2 — fetch artists to derive genre buckets. Soft-fail:
+      // if the artist endpoints are also restricted for this app, keep
+      // the releases visible without genre tags rather than erroring.
+      try {
+        const artistIds = items.flatMap(a => (a.artists || []).map(ar => ar.id));
+        const artists   = await Spotify.fetchArtists(artistIds);
+        mapped = items.map(a => Data.fromSpotifyAlbum(a, artists));
+        setReleases(mapped);
 
-      const allGenres = Object.values(artists).flatMap(a => a.genres || []);
-      const unmatched = window.Genres.unmatchedGenres(allGenres);
-      if (unmatched.length) {
-        console.log("[listening-post] unmatched Spotify genres:", unmatched);
+        const allGenres = Object.values(artists).flatMap(a => a.genres || []);
+        const unmatched = window.Genres.unmatchedGenres(allGenres);
+        if (unmatched.length) {
+          console.log("[listening-post] unmatched Spotify genres:", unmatched);
+        }
+      } catch (e) {
+        console.warn("[listening-post] artist fetch failed — genre buckets disabled:", e.message);
       }
     } catch (e) {
       console.error(e);
