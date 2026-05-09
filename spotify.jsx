@@ -28,13 +28,17 @@ async function spotifyFetch(path, opts = {}) {
   return res.json();
 }
 
-// Spotify locked /browse/new-releases for many newer apps (returns 403).
-// Search with `tag:new` is the documented replacement and stays open.
-// New-app quota also caps the per-request limit lower than the
-// historical 50; 20 is the safe baseline.
+// Spotify locked /browse/new-releases for many newer apps (403) and the
+// `tag:new` search operator now also requires extended quota — Spotify
+// reports it as a misleading "Invalid limit" 400. A year:<current> query
+// stays open and we sort the result by release date client-side to bubble
+// the freshest releases to the top.
 async function fetchNewReleases({ limit = 20, offset = 0 } = {}) {
+  const year = new Date().getFullYear();
   const params = new URLSearchParams({
-    q: "tag:new", type: "album", limit: String(limit),
+    q: `year:${year}`,
+    type: "album",
+    limit: String(limit),
   });
   if (offset > 0) params.set("offset", String(offset));
   const data = await spotifyFetch(`/search?${params}`);
