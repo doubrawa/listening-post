@@ -23,7 +23,9 @@ async function spotifyFetch(path, opts = {}) {
     return spotifyFetch(path, opts);
   }
   if (!res.ok) {
-    throw new Error(`Spotify API ${res.status}: ${await res.text()}`);
+    const body = await res.text();
+    console.error("[spotify] ←", res.status, res.statusText, body);
+    throw new Error(`Spotify API ${res.status}: ${body}`);
   }
   return res.json();
 }
@@ -33,12 +35,11 @@ async function spotifyFetch(path, opts = {}) {
 // reports it as a misleading "Invalid limit" 400. A year:<current> query
 // stays open and we sort the result by release date client-side to bubble
 // the freshest releases to the top.
-async function fetchNewReleases({ limit = 20, offset = 0 } = {}) {
+async function fetchNewReleases({ offset = 0 } = {}) {
   const year = new Date().getFullYear();
   const params = new URLSearchParams({
     q: `year:${year}`,
     type: "album",
-    limit: String(limit),
   });
   if (offset > 0) params.set("offset", String(offset));
   const data = await spotifyFetch(`/search?${params}`);
