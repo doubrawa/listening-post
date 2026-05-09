@@ -1,13 +1,14 @@
 // Release grid + featured hero
-const { useState: useStateGrid } = React;
-
 function fmtDate(iso) {
+  if (!iso) return "—";
   const d = new Date(iso);
+  if (isNaN(d.getTime())) return "—";
   return d.toLocaleDateString("en-US", { month: "short", day: "2-digit" }).toUpperCase();
 }
 
 function daysAgo(iso) {
-  const today = new Date("2026-05-09");
+  if (!iso) return "";
+  const today = new Date();
   const d = new Date(iso);
   const ms = today - d;
   const days = Math.round(ms / 86400000);
@@ -56,10 +57,10 @@ function Card({ release, onOpen, onSpotify }) {
         <div className="mono" style={{ fontSize: 10, color: "var(--fg-3)",
             letterSpacing: "0.12em", display: "flex", gap: 8 }}>
           <span>{fmtDate(release.date)}</span>
-          {release.medium && (
+          {release.buckets?.[0] && (
             <>
               <span style={{ color: "var(--line)" }}>·</span>
-              <span>{release.medium.toUpperCase()}</span>
+              <span>{release.buckets[0].toUpperCase()}</span>
             </>
           )}
         </div>
@@ -69,7 +70,7 @@ function Card({ release, onOpen, onSpotify }) {
         </div>
         <div style={{ fontSize: 13, color: "var(--fg-2)" }}>{release.artist}</div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
-          {release.styles.slice(0, 2).map(s => (
+          {(release.styles || []).slice(0, 2).map(s => (
             <span key={s} className="mono" style={{
               fontSize: 10, color: "var(--fg-3)", letterSpacing: "0.04em",
             }}>· {s.toLowerCase()}</span>
@@ -97,7 +98,7 @@ function Hero({ release, onOpen, onSpotify }) {
             letterSpacing: "0.18em", textTransform: "uppercase",
             display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{ display: "inline-block", width: 24, height: 1, background: "var(--accent)" }} />
-          Editor's pick · {daysAgo(release.date).toLowerCase()}
+          Latest · {daysAgo(release.date).toLowerCase()}
         </div>
         <h1 className="serif" style={{
           fontSize: "clamp(2.4rem, 4.5vw, 4rem)", lineHeight: 1, margin: 0,
@@ -109,23 +110,15 @@ function Hero({ release, onOpen, onSpotify }) {
         <div style={{ fontSize: 17, color: "var(--fg-2)" }}>
           <span className="serif" style={{ fontStyle: "italic" }}>by</span>{" "}
           <strong style={{ fontWeight: 500, color: "var(--fg)" }}>{release.artist}</strong>
-          {release.source && (
-            <>
-              <span style={{ color: "var(--fg-3)" }}> · </span>
-              {release.source}
-            </>
-          )}
         </div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          <span className="pill solid">{release.genre}</span>
-          {release.medium && <span className="pill">{release.medium}</span>}
-          {release.styles.map(s => <span key={s} className="pill">{s}</span>)}
+          {(release.buckets || []).map(b => <span key={b} className="pill solid">{b}</span>)}
+          {(release.styles || []).slice(0, 6).map(s => <span key={s} className="pill">{s}</span>)}
         </div>
         <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)",
             letterSpacing: "0.08em", display: "flex", gap: 16, marginTop: 4 }}>
-          <span>{release.tracks} tracks</span>
-          <span>{release.duration}</span>
-          <span>{release.label}</span>
+          {release.tracks != null && <span>{release.tracks} tracks</span>}
+          {release.label && <span>{release.label}</span>}
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
           <button onClick={() => onSpotify(release)} style={{

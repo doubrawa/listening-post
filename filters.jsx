@@ -1,5 +1,6 @@
-// Sidebar filter panel
-const { useMemo } = React;
+// Sidebar filter panel.
+// Style and artist lists are derived from the loaded data — they reflect
+// only what's actually present in the current results.
 
 function Section({ title, count, right, children }) {
   return (
@@ -38,12 +39,12 @@ function ChipToggle({ active, onClick, children, dim }) {
   );
 }
 
-function FilterPanel({ filters, setFilter, allArtists, isSoundtracks, resultCount, onReset }) {
+function FilterPanel({ filters, setFilter, allArtists, allStyles, resultCount, onReset }) {
   const dateChips = [
     { v: "7d",   label: "7 days"  },
     { v: "30d",  label: "30 days" },
     { v: "90d",  label: "90 days" },
-    { v: "year", label: "2026"    },
+    { v: "year", label: String(new Date().getFullYear()) },
     { v: "all",  label: "All"     },
   ];
 
@@ -70,7 +71,7 @@ function FilterPanel({ filters, setFilter, allArtists, isSoundtracks, resultCoun
         <div className="serif" style={{ fontSize: 22, fontStyle: "italic" }}>Filters</div>
         <button onClick={onReset} className="mono"
           style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase",
-                   color: "var(--fg-3)", borderBottom: "1px solid transparent" }}
+                   color: "var(--fg-3)" }}
           onMouseEnter={e => e.currentTarget.style.color = "var(--fg)"}
           onMouseLeave={e => e.currentTarget.style.color = "var(--fg-3)"}>
           Reset
@@ -82,7 +83,6 @@ function FilterPanel({ filters, setFilter, allArtists, isSoundtracks, resultCoun
         </div>
       </div>
 
-      {/* Sort */}
       <Section title="Sort">
         <select value={filters.sort} onChange={e => setFilter("sort", e.target.value)}
           style={{
@@ -100,7 +100,6 @@ function FilterPanel({ filters, setFilter, allArtists, isSoundtracks, resultCoun
         </select>
       </Section>
 
-      {/* Released */}
       <Section title="Released">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
           {dateChips.map(c => (
@@ -112,33 +111,23 @@ function FilterPanel({ filters, setFilter, allArtists, isSoundtracks, resultCoun
         </div>
       </Section>
 
-      {/* Medium — only for soundtracks */}
-      {isSoundtracks && (
-        <Section title="Medium" count={filters.mediums.length || null}>
+      <Section title="Style" count={filters.styles.length || null}>
+        {allStyles.length === 0 ? (
+          <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)" }}>
+            no style tags yet
+          </div>
+        ) : (
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {window.MEDIUMS.map(m => (
-              <ChipToggle key={m} active={filters.mediums.includes(m)}
-                onClick={() => setFilter("toggleMedium", m)}>
-                {m}
+            {allStyles.map(s => (
+              <ChipToggle key={s} active={filters.styles.includes(s)}
+                onClick={() => setFilter("toggleStyle", s)}>
+                {s}
               </ChipToggle>
             ))}
           </div>
-        </Section>
-      )}
-
-      {/* Styles */}
-      <Section title="Style" count={filters.styles.length || null}>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-          {window.STYLES.map(s => (
-            <ChipToggle key={s} active={filters.styles.includes(s)}
-              onClick={() => setFilter("toggleStyle", s)}>
-              {s}
-            </ChipToggle>
-          ))}
-        </div>
+        )}
       </Section>
 
-      {/* Composer/Artist */}
       <Section title="Artist · Composer" count={filters.artists.length || null}>
         <input
           placeholder="filter list…"

@@ -1,19 +1,39 @@
-// Slide-in detail drawer
+// Slide-in detail drawer. Fetches the full album on open to show
+// the real tracklist (not included in the new-releases response).
+
+function fmtMs(ms) {
+  if (ms == null) return "—";
+  const total = Math.floor(ms / 1000);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 function Drawer({ release, onClose, onSpotify }) {
+  const [album, setAlbum]     = React.useState(null);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError]     = React.useState(null);
+
   React.useEffect(() => {
     const onKey = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  React.useEffect(() => {
+    if (!release) { setAlbum(null); return; }
+    setAlbum(null);
+    setError(null);
+    setLoading(true);
+    Spotify.fetchAlbum(release.id)
+      .then(a => { setAlbum(a); setLoading(false); })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, [release?.id]);
+
   if (!release) return null;
 
-  // Fake tracklist generation
-  const tracks = Array.from({ length: release.tracks }, (_, i) => ({
-    n: i + 1,
-    name: TRACK_NAMES[(release.id * 7 + i) % TRACK_NAMES.length],
-    dur: `${1 + ((release.id + i) % 5)}:${String(10 + ((release.id * 11 + i * 17) % 50)).padStart(2, "0")}`,
-  }));
+  const tracks = album?.tracks?.items || [];
+  const label  = album?.label  || release.label;
 
   return (
     <>
@@ -53,12 +73,10 @@ function Drawer({ release, onClose, onSpotify }) {
           </h2>
           <div style={{ fontSize: 16, color: "var(--fg-2)", marginBottom: 14 }}>
             {release.artist}
-            {release.source && <> · <span style={{ fontStyle: "italic" }}>{release.source}</span></>}
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 20 }}>
-            <span className="pill solid">{release.genre}</span>
-            {release.medium && <span className="pill">{release.medium}</span>}
-            {release.styles.map(s => <span key={s} className="pill">{s}</span>)}
+            {(release.buckets || []).map(b => <span key={b} className="pill solid">{b}</span>)}
+            {(release.styles || []).map(s => <span key={s} className="pill">{s}</span>)}
           </div>
 
           <button onClick={() => onSpotify(release)} style={{
@@ -80,11 +98,13 @@ function Drawer({ release, onClose, onSpotify }) {
             margin: "24px 0",
           }}>
             {[
-              ["Label",    release.label],
-              ["Tracks",   release.tracks],
-              ["Length",   release.duration],
-              ["Released", new Date(release.date).toLocaleDateString("en-US",
-                            { month: "long", day: "numeric", year: "numeric" })],
+              ["Label",    label || "—"],
+              ["Tracks",   release.tracks ?? "—"],
+              ["Released", release.date
+                ? new Date(release.date).toLocaleDateString("en-US",
+                            { month: "long", day: "numeric", year: "numeric" })
+                : "—"],
+              ["Type",     album?.album_type || "—"],
             ].map(([k, v]) => (
               <div key={k} style={{ background: "var(--bg-2)", padding: "12px 14px" }}>
                 <div className="mono" style={{ fontSize: 10, color: "var(--fg-3)",
@@ -98,24 +118,36 @@ function Drawer({ release, onClose, onSpotify }) {
               letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 12 }}>
             Tracklist
           </div>
-          <div>
-            {tracks.map(t => (
-              <div key={t.n} style={{
-                display: "grid",
-                gridTemplateColumns: "28px 1fr auto",
-                alignItems: "center",
-                padding: "9px 0",
-                borderBottom: "1px solid var(--line-soft)",
-                fontSize: 13.5,
-              }}>
-                <span className="mono" style={{ color: "var(--fg-3)", fontSize: 11 }}>
-                  {String(t.n).padStart(2, "0")}
-                </span>
-                <span style={{ color: "var(--fg)" }}>{t.name}</span>
-                <span className="mono" style={{ color: "var(--fg-3)", fontSize: 11 }}>{t.dur}</span>
-              </div>
-            ))}
-          </div>
+          {loading && (
+            <div className="mono" style={{ fontSize: 11, color: "var(--fg-3)",
+                padding: "12px 0" }}>loading…</div>
+          )}
+          {error && (
+            <div className="mono" style={{ fontSize: 11, color: "var(--danger)",
+                padding: "12px 0" }}>{error}</div>
+          )}
+          {tracks.length > 0 && (
+            <div>
+              {tracks.map(t => (
+                <div key={t.id || t.track_number} style={{
+                  display: "grid",
+                  gridTemplateColumns: "28px 1fr auto",
+                  alignItems: "center",
+                  padding: "9px 0",
+                  borderBottom: "1px solid var(--line-soft)",
+                  fontSize: 13.5,
+                }}>
+                  <span className="mono" style={{ color: "var(--fg-3)", fontSize: 11 }}>
+                    {String(t.track_number).padStart(2, "0")}
+                  </span>
+                  <span style={{ color: "var(--fg)" }}>{t.name}</span>
+                  <span className="mono" style={{ color: "var(--fg-3)", fontSize: 11 }}>
+                    {fmtMs(t.duration_ms)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
       <style>{`
@@ -125,16 +157,5 @@ function Drawer({ release, onClose, onSpotify }) {
     </>
   );
 }
-
-const TRACK_NAMES = [
-  "Overture", "First Light", "The Approach", "Slow Procession", "A Quiet Room",
-  "Threshold", "The Long Field", "Drift", "Memory of Salt", "Vespers",
-  "Iron Door", "The Letter", "Cold Stations", "Houseguest", "Slow Tide",
-  "Mountains in Motion", "Bird's Eye", "After Rain", "Night Watch", "Lantern",
-  "Glass and Gold", "Vanishing Point", "Hollow Reach", "Atlas Drift", "Concord",
-  "Quiet Engine", "Field Magnet", "Late Show", "Burner", "Riverine",
-  "Pendulum", "Études", "Horizon", "Halflight", "Patterns at Dusk",
-  "End Credits",
-];
 
 window.Drawer = Drawer;
